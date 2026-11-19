@@ -1,0 +1,118 @@
+# Local deployment. Image versions are pinned by tag (pin by digest for production).
+# NOT verified in the authoring environment (no Docker available): see README "Verification status".
+name: safeloop
+
+services:
+  api:
+    build: .
+    environment:
+      SAFELOOP_API_TOKEN: ${SAFELOOP_API_TOKEN:?set SAFELOOP_API_TOKEN in .env}
+      SAFELOOP_DB_URL: sqlite:////data/safeloop.db
+      SAFELOOP_OLLAMA_URL: ${SAFELOOP_OLLAMA_URL:-http://host.docker.internal:11434}
+      SAFELOOP_OLLAMA_MODEL: ${SAFELOOP_OLLAMA_MODEL:-qwen2.5-coder:7b}
+      SAFELOOP_SANDBOX_IMAGE: safeloop-sandbox:1
+      SAFELOOP_RATE_LIMIT_PER_MIN: ${SAFELOOP_RATE_LIMIT_PER_MIN:-60}
+      SAFELOOP_RETENTION_DAYS: ${SAFELOOP_RETENTION_DAYS:-30}
+      SAFELOOP_OTLP_ENDPOINT: ${SAFELOOP_OTLP_ENDPOINT:-}
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    # SECURITY: the API launches sandbox containers through the Docker socket. Anyone who controls
+    # this container controls the host Docker daemon. Never expose the API publicly; prefer running
+    # the API on the host, a rootless daemon, or a socket proxy. Sandbox containers never get the socket.
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - api-data:/data
+    group_add: ["${DOCKER_GID:-999}"]
+    ports: ["127.0.0.1:8000:8000"]
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8000/metrics', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+  ui:
+    build: .
+    command: ["streamlit", "run", "/app/src/safeloop/ui/app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+    environment:
+      SAFELOOP_API_URL: http://api:8000
+      SAFELOOP_API_TOKEN: ${SAFELOOP_API_TOKEN:?set SAFELOOP_API_TOKEN in .env}
+      SAFELOOP_PROMETHEUS_URL: http://prometheus:9090
+    ports: ["127.0.0.1:8501:8501"]
+    depends_on: {api: {condition: service_healthy}}
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://localhost:8501/_stcore/health', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    ports: ["127.0.0.1:9090:9090"]
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:3.2.1
+    command: ["-config.file=/etc/loki/config.yml"]
+    volumes:
+      - ./monitoring/loki/config.yml:/etc/loki/config.yml:ro
+      - loki-data:/loki
+    networks: [internal]
+    restart: unless-stopped
+
+  promtail:
+    image: grafana/promtail:3.2.1
+    command: ["-config.file=/etc/promtail/config.yml"]
+    volumes:
+      - ./monitoring/promtail/config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on: [loki]
+    networks: [internal]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports: ["127.0.0.1:3000:3000"]
+    depends_on: [prometheus, loki]
+    networks: [internal]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Build once: docker compose --profile build build sandbox-image
+  sandbox-image:
+    build: {context: ., dockerfile: Dockerfile.sandbox}
+    image: safeloop-sandbox:1
+    profiles: ["build"]
+
+networks:
+  internal: {}
+
+volumes:
+  api-data:
+  prometheus-data:
+  loki-data:
+  grafana-data:

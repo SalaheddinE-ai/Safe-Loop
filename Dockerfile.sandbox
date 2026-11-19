@@ -1,0 +1,8 @@
+# Minimal execution image. Build: docker build -f Dockerfile.sandbox -t safeloop-sandbox:1 .
+# TODO(before release): pin the base image by digest (python@sha256:...) after verifying it.
+FROM python:3.12-slim
+RUN pip install --no-cache-dir pytest==8.3.3 && useradd -u 10001 -M -s /usr/sbin/nologin sandbox
+COPY sandbox_image/runner.py /opt/safeloop/runner.py
+USER 10001:10001
+WORKDIR /tmp
+ENTRYPOINT ["python", "/opt/safeloop/runner.py"]

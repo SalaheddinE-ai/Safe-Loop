@@ -1,0 +1,31 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    strategy: {matrix: {python: ["3.11", "3.12"]}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "${{ matrix.python }}"}
+      - run: pip install -e ".[dev,docker,ui]"
+      - run: ruff check src tests scripts
+      - run: mypy src
+      - run: pytest --cov=safeloop -q   # no paid APIs; docker-marked tests skip without an image
+  docker-isolation:
+    runs-on: ubuntu-24.04
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -e ".[dev,docker]"
+      - run: docker build -f Dockerfile.sandbox -t safeloop-sandbox:1 .
+      - run: pytest -m docker -v
+  monitoring-config:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          docker run --rm --entrypoint promtool -v $PWD/monitoring/prometheus:/p:ro \
+            prom/prometheus:v2.55.0 check config /p/prometheus.yml

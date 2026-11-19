@@ -1,0 +1,10 @@
+{
+ "t01_fizzbuzz": "def fizzbuzz(n):\n    out = []\n    for i in range(1, n + 1):\n        out.append('FizzBuzz' if i % 15 == 0 else 'Fizz' if i % 3 == 0 else 'Buzz' if i % 5 == 0 else str(i))\n    return out\n",
+ "t02_palindrome": "def is_palindrome(s):\n    t = [c.lower() for c in s if c.isalnum()]\n    return t == t[::-1]\n",
+ "t03_merge_sorted": "def merge_sorted(a, b):\n    i = j = 0\n    out = []\n    while i < len(a) and j < len(b):\n        if a[i] <= b[j]:\n            out.append(a[i]); i += 1\n        else:\n            out.append(b[j]); j += 1\n    return out + a[i:] + b[j:]\n",
+ "t04_flatten": "def flatten(nested):\n    out = []\n    for x in nested:\n        if isinstance(x, (list, tuple)):\n            out.extend(flatten(x))\n        else:\n            out.append(x)\n    return out\n",
+ "t05_safe_divide": "def safe_divide(a, b):\n    for v in (a, b):\n        if isinstance(v, bool) or not isinstance(v, (int, float)):\n            raise TypeError('numbers only')\n    return None if b == 0 else a / b\n",
+ "t06_bugfix_vowels": "def count_vowels(s):\n    return sum(1 for ch in s.lower() if ch in 'aeiou')\n",
+ "t07_rle": "def rle_encode(s):\n    out = []\n    i = 0\n    while i < len(s):\n        j = i\n        while j < len(s) and s[j] == s[i]:\n            j += 1\n        out.append(f'{s[i]}{j - i}')\n        i = j\n    return ''.join(out)\n",
+ "t08_top_k": "from collections import Counter\n\ndef top_k_frequent(words, k):\n    if k <= 0:\n        return []\n    c = Counter(words)\n    return [w for w, _ in sorted(c.items(), key=lambda kv: (-kv[1], kv[0]))[:k]]\n"
+}
